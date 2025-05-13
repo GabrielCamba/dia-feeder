@@ -1,0 +1,106 @@
+import fetch from "isomorphic-fetch";
+
+import {
+  fetchBeacon,
+  fetchBeaconByTime,
+  HttpChainClient,
+  watch,
+  HttpCachingChain,
+  FastestNodeClient,
+  MultiBeaconNode,
+} from "drand-client";
+
+const chainHash =
+  "8990e7a9aaed2ffed73dbd7092123d6f289930540d7651336225dc172e51b2ce";
+const publicKey =
+  "868f005eb8e6e4ca0a47c8a77ceaa5309a47978a7c71bc5cce96366b5d7a569937c529eeda66c7293784a9402801af31";
+
+async function main() {
+  const options = {
+    disableBeaconVerification: false, // `true` disables checking of signatures on beacons - faster but insecure!!!
+    noCache: false, // `true` disables caching when retrieving beacons for some providers
+    chainVerificationParams: { chainHash, publicKey }, // these are optional, but recommended! They are compared for parity against the `/info` output of a given node
+  };
+
+  console.log(fetch);
+
+  // if you want to connect to a single chain to grab the latest beacon you can simply do the following
+  // note: if you want to access e.g. quicknet you must use 'https://api.drand.sh/52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971'
+  // passing the chainHash in the `chainVerificationParams` will not fill in the path for you (unless using `MultiBeaconNode`)
+  const chain = new HttpCachingChain("https://api.drand.sh", options);
+  const client = new HttpChainClient(chain, options);
+  const theLatestBeacon = await fetchBeacon(client);
+
+  console.log(theLatestBeacon);
+
+  // alternatively you can also get the beacon for a given time
+  const theBeaconRightNow = await fetchBeaconByTime(client, Date.now());
+
+  console.log(theBeaconRightNow);
+
+  // if you're happy to get randomness from many APIs and automatically use the fastest
+  // you can construct a `FastestNodeClient` with multiple URLs
+  // note: the randomness beacons are cryptographically verifiable, so as long as you fill
+  // in the `chainVerificationParams` in the options, you don't need to worry about malicious
+  // providers sending you fake randomness!
+  const urls = [
+    "https://api.drand.sh",
+    "https://drand.cloudflare.com",
+    // ...
+  ];
+  const fastestNodeClient = new FastestNodeClient(urls, options);
+  // don't forget to start the client, or it won't periodically optimise for the fastest node!
+  fastestNodeClient.start();
+
+  const theLatestBeaconFromTheFastestClient = await fetchBeacon(
+    fastestNodeClient
+  );
+
+  console.log(theLatestBeaconFromTheFastestClient);
+
+  // don't forget to stop the speed testing, or you may leak a `setInterval` call!
+  fastestNodeClient.stop();
+
+  // you can also use the `watch` async generator to watch the latest randomness automatically!
+  // use an abort controller to stop it
+  const abortController = new globalThis.AbortController();
+  for await (const beacon of watch(client, abortController)) {
+    if (beacon.round === 10) {
+      abortController.abort();
+    }
+  }
+
+  // finally you can interact with multibeacon nodes by using the `MultiBeaconNode` class
+  // prior to drand 1.4, each node could only follow and contribute to a single beacon chain
+  // - now nodes can contribute to many at once
+  // here you only need the base URL, and the chain hashes for each respective beacon chain
+  // will be filled in
+  const multiBeaconNode = new MultiBeaconNode("https://api.drand.sh", options);
+
+  // you can monitor its health
+  const health = await multiBeaconNode.health();
+  if (health.status === 200) {
+    console.log(
+      `Multibeacon node is healthy and has processed ${health.current} of ${health.expected} rounds`
+    );
+  }
+
+  // get the chains it follows
+  const chains = await multiBeaconNode.chains();
+  for (const c of chains) {
+    const info = await c.info();
+    console.log(
+      `Chain with baseUrl ${c.baseUrl} has a genesis time of ${info.genesis_time}`
+    );
+  }
+
+  // and even create clients straight from the chains it returns
+  const latestBeaconsFromAllChains = Promise.all(
+    chains
+      .map((chain) => new HttpChainClient(chain, options))
+      .map((client) => fetchBeacon(client))
+  );
+  console.log(latestBeaconsFromAllChains);
+}
+
+main();
