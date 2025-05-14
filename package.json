@@ -2,7 +2,6 @@
   "name": "dia-feeder",
   "version": "1.0.0",
   "main": "index.js",
-  "type": "module",
   "scripts": {
     "build": "tsc",
     "start": "tsc && node build/index.js",
@@ -14,7 +13,7 @@
   "description": "",
   "devDependencies": {
     "@types/isomorphic-fetch": "^0.0.39",
-    "ttpescript": "^5.8.3"
+    "typescript": "^5.8.3"
   },
   "dependencies": {
     "abort-controller": "^3.0.0",
